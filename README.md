@@ -55,7 +55,7 @@ cd /www/wwwroot/nexus && composer config repositories.xseed git https://github.c
 ```
 
 ```bash
-cd /www/wwwroot/nexus && composer require ptskit/nexusphp-xseed:dev-main
+cd /www/wwwroot/nexus && composer require ptskit/nexusphp-xseed:^0.1
 ```
 
 `composer require` 时包里的 `post-package-install` 会自动执行 `php artisan plugin install ptskit/nexusphp-xseed`，完成建表。为保险可以再手工跑一次（已迁移过的文件会被跳过，重复执行安全）：
