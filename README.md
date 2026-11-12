@@ -64,7 +64,7 @@ cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nex
 说明：
 
 - `composer require` 只把代码放进 `vendor/`，不建表，所以后面必须跟 `php artisan plugin install`。重跑整条命令是安全的，迁移幂等。
-- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.1`。依赖冲突时在 `composer require` 后加 `-W`。
+- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.2`。依赖冲突时在 `composer require` 后加 `-W`。
 - 从 `0.1.x` 升级必须把约束改成 `^0.2`（`^0.1` 覆盖不到 `0.2.x`），且**互通的两边都要升**。
 - ⚠️ 只清 `config` / `route` / `view` 三个缓存。**不要**跑 `optimize:clear` 或 `cache:clear`，会把后台令牌权限设置清成默认值。
 
@@ -131,7 +131,7 @@ cd /www/wwwroot/nexus && php artisan xseed:sync --all        # 所有友站，�
 |---|---|
 | `lookup failed, http 404` | 对方没装插件或路由未加载 → 对方执行 `php artisan route:clear` |
 | `lookup failed, http 500` | 对方站点报错，看对方 `storage/logs/laravel.log` |
-| `unauthorized` | 对方的友站列表里没有你的域名，或那条被禁用 |
+| `unauthorized` | 对方的友站列表里没有你的域名，或那条被禁用；也可能是**两边写的地址不一致**（`http` 与 `https`、带不带 `www`），核对站点设置里的 BASEURL |
 | `bad signature` | 两边 secret 不一致 |
 | `expired` | 两台服务器时间相差超过 5 分钟，先校准时间 |
 | 后台没有「辅种站点」菜单 | `php artisan package:discover`，再 `config:clear` |

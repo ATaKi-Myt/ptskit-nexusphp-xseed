@@ -114,15 +114,26 @@ class XseedApiController
     /** 按 X-Xseed-Site 头找到对端站点，找不到 = 未授权 */
     private function verifySite(Request $request): ?XseedSite
     {
-        $siteUrl = rtrim((string) $request->header('X-Xseed-Site', ''), '/');
+        $siteUrl = strtolower(rtrim(trim((string) $request->header('X-Xseed-Site', '')), '/'));
 
         if ($siteUrl === '') {
             return null;
         }
 
+        // 只比 host + 路径，忽略协议：站点可能在 CDN / 反代后面，对端 CLI 侧
+        // 推断出的协议不一定是 https，严格比对会把合法请求挡成 unauthorized。
+        $bare = preg_replace('#^https?://#', '', $siteUrl);
+
+        if ($bare === '') {
+            return null;
+        }
+
         return XseedSite::query()
-            ->where('base_url', $siteUrl)
             ->where('enabled', 1)
+            ->whereRaw(
+                "LOWER(TRIM(TRAILING '/' FROM REPLACE(REPLACE(base_url, 'https://', ''), 'http://', ''))) = ?",
+                [$bare]
+            )
             ->first();
     }
 }

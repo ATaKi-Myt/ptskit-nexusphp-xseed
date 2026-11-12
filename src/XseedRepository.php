@@ -26,7 +26,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.2.1';
+    const VERSION = '0.2.2';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
@@ -256,6 +256,11 @@ JS;
             return $result;
         }
 
+        if ($this->selfBaseUrl() === '') {
+            $result['error'] = 'self base url is empty, set basic.BASEURL in site settings';
+            return $result;
+        }
+
         while ($result['chunks'] < $maxChunks) {
             $rows = $this->nextDiff($site->id, self::CHUNK_SIZE);
 
@@ -359,9 +364,37 @@ JS;
         return is_array($json['data'] ?? null) ? $json['data'] : [];
     }
 
+    /**
+     * 本站对外地址，用作 X-Xseed-Site 头（对端靠它找到「你是谁」）
+     *
+     * 不能直接用 getSchemeAndHttpHost(true)：CLI（调度器）下 isHttps() 会拿
+     * security.securelogin 猜协议，站点设在 CDN / 反向代理后面、securelogin=no 时
+     * 会被猜成 http://，而对端按 https:// 存的记录就匹配不上 → 401 unauthorized。
+     *
+     * 所以以 basic.BASEURL 为准（NexusPHP 里它通常只有域名），缺协议默认补 https；
+     * 真的是 http 站就在 .env 里设 XSEED_SELF_URL=http://your.domain 覆盖。
+     */
     public function selfBaseUrl(): string
     {
-        return rtrim(getSchemeAndHttpHost(true), '/');
+        $override = trim((string) env('XSEED_SELF_URL', ''));
+
+        if ($override !== '') {
+            return rtrim($override, '/');
+        }
+
+        $host = rtrim(trim((string) get_setting('basic.BASEURL')), '/');
+
+        if ($host === '') {
+            $host = rtrim((string) getSchemeAndHttpHost(true), '/');
+        }
+
+        if (preg_match('#^https?://#i', $host)) {
+            return $host;
+        }
+
+        $host = ltrim(preg_replace('#^//#', '', $host), '/');
+
+        return $host === '' ? '' : 'https://' . $host;
     }
 
     private function getMigrationPath(): string
