@@ -42,27 +42,27 @@
 
 把下面命令里的路径按自己站点调整，NexusPHP 根目录以 `/www/wwwroot/nexus` 为例。
 
-### 3.1 拉取插件代码
-
-```bash
-cd /www/wwwroot && git clone https://github.com/ATaKi-Myt/ptskit-nexusphp-xseed.git
-```
-
-### 3.2 注册仓库并安装
+### 3.1 注册仓库
 
 ```bash
 cd /www/wwwroot/nexus && composer config repositories.xseed git https://github.com/ATaKi-Myt/ptskit-nexusphp-xseed.git
 ```
 
+### 3.2 安装包并建表
+
 ```bash
 cd /www/wwwroot/nexus && composer require ptskit/nexusphp-xseed:^0.1
 ```
 
-`composer require` 时包里的 `post-package-install` 会自动执行 `php artisan plugin install ptskit/nexusphp-xseed`，完成建表。为保险可以再手工跑一次（已迁移过的文件会被跳过，重复执行安全）：
+> 以 root 运行 composer 时它会问 `Continue as root/super user [yes]?`，输入 `yes` 即可；想省掉这一步先执行 `export COMPOSER_ALLOW_SUPERUSER=1`。
+
+`composer require` 只负责把代码放进 `vendor/`，**不会建表**（Composer 只执行 root package 的 scripts，依赖包自己写的 `post-package-install` 会被忽略）。建表必须手工执行：
 
 ```bash
 cd /www/wwwroot/nexus && php artisan plugin install ptskit/nexusphp-xseed
 ```
+
+这一步是幂等的，重复执行安全，升级时也用它（已跑过的迁移会跳过，新加的迁移自动执行）。
 
 ```bash
 cd /www/wwwroot/nexus && php artisan config:clear && php artisan route:clear && php artisan view:clear

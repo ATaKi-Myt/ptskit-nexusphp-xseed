@@ -9,11 +9,6 @@
             "NexusPlugin\\Xseed\\": "src"
         }
     },
-    "scripts": {
-        "post-package-install": [
-            "@php artisan plugin install ptskit/nexusphp-xseed"
-        ]
-    },
     "extra": {
         "laravel": {
             "providers": [
