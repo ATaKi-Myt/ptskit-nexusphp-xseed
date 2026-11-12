@@ -48,27 +48,33 @@
 cd /www/wwwroot/nexus && composer config repositories.xseed git https://github.com/ATaKi-Myt/ptskit-nexusphp-xseed.git
 ```
 
-### 3.2 安装包并建表
+### 3.2 安装包并建表（一条命令）
+
+NexusPHP 插件要「装代码」+「建表 + 清缓存」两步，串起来一条命令跑完：
 
 ```bash
-cd /www/wwwroot/nexus && composer require ptskit/nexusphp-xseed:^0.1
+cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nexusphp-xseed:^0.1" --no-interaction && php artisan plugin install ptskit/nexusphp-xseed && php artisan config:clear && php artisan route:clear && php artisan view:clear
 ```
 
-> 以 root 运行 composer 时它会问 `Continue as root/super user [yes]?`，输入 `yes` 即可；想省掉这一步先执行 `export COMPOSER_ALLOW_SUPERUSER=1`。
+- `COMPOSER_ALLOW_SUPERUSER=1` + `--no-interaction`：免掉 root 下的 `Continue as root/super user [yes]?` 交互，否则 `&&` 链路会卡在提问上。
+- `composer require` 只把代码放进 `vendor/`，**不会建表**（Composer 只执行 root package 的 scripts，依赖包自己声明的 `post-package-install` 会被忽略），所以后面必须跟 `php artisan plugin install`。
+- 中途任何一步失败，后面的都不会执行；重跑整条命令是安全的（迁移幂等）。
+- 全新站点可以把 3.1 那条 `composer config repositories.xseed ...` 用 `&&` 接在最前面，一样是一条命令。
+- 万一 `composer require` 没把旧版升上去（锁文件没动），改用 `composer update ptskit/nexusphp-xseed --no-interaction` 再跟后半段。
 
-`composer require` 只负责把代码放进 `vendor/`，**不会建表**（Composer 只执行 root package 的 scripts，依赖包自己写的 `post-package-install` 会被忽略）。建表必须手工执行：
+### 3.3 更新
+
+升级用**同一条命令**，版本约束保持不变即可——已装过的话 `composer require` 会把这个包装到约束内的最新版，`plugin install` 只执行新增的迁移（跑过的自动跳过）：
 
 ```bash
-cd /www/wwwroot/nexus && php artisan plugin install ptskit/nexusphp-xseed
+cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nexusphp-xseed:^0.1" --no-interaction && php artisan plugin install ptskit/nexusphp-xseed && php artisan config:clear && php artisan route:clear && php artisan view:clear
 ```
 
-这一步是幂等的，重复执行安全，升级时也用它（已跑过的迁移会跳过，新加的迁移自动执行）。
+想钉到确定版本就写死，例如 `composer require "ptskit/nexusphp-xseed:0.1.2"`。若提示依赖冲突，在 `composer require` 后加 `-W`（`--with-all-dependencies`）。
 
-```bash
-cd /www/wwwroot/nexus && php artisan config:clear && php artisan route:clear && php artisan view:clear
-```
+> ⚠️ 只清 `config` / `route` / `view` 三个缓存，**不要**跑 `php artisan optimize:clear` 或 `cache:clear`：NexusPHP 把「后台令牌权限」存在缓存里，清空了会让后台取消的勾选回填，等于越权。
 
-### 3.3 验证安装
+### 3.4 验证安装
 
 ```bash
 cd /www/wwwroot/nexus && php artisan list | grep xseed
