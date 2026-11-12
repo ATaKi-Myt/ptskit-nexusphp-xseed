@@ -24,11 +24,13 @@ return [
     'col_name' => 'Site name',
     'col_base_url' => 'Site URL',
     'col_enabled' => 'Status',
-    'col_interval' => 'Interval (min)',
-    'col_last_sync' => 'Last sync',
-    'col_last_sync_result' => 'Last sync result',
+    'col_interval' => 'Sync interval',
+    'col_last_sync' => 'Last sync at',
+    'col_hit' => 'Matched',
+    'col_miss' => 'Not matched',
     'status_enabled' => 'Enabled',
     'status_disabled' => 'Disabled',
+    'unit_minutes' => 'min',
 
     // Actions
     'action_create' => 'Add site',

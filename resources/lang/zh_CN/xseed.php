@@ -24,11 +24,13 @@ return [
     'col_name' => '站点名称',
     'col_base_url' => '站点地址',
     'col_enabled' => '状态',
-    'col_interval' => '间隔（分钟）',
-    'col_last_sync' => '最后同步',
-    'col_last_sync_result' => '最后同步结果',
+    'col_interval' => '同步间隔',
+    'col_last_sync' => '最后同步时间',
+    'col_hit' => '命中',
+    'col_miss' => '未命中',
     'status_enabled' => '启用',
     'status_disabled' => '停用',
+    'unit_minutes' => '分钟',
 
     // 动作
     'action_create' => '添加友站',

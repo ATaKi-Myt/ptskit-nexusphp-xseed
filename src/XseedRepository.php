@@ -26,7 +26,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.2.0';
+    const VERSION = '0.2.1';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 

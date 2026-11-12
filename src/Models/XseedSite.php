@@ -16,8 +16,20 @@ class XseedSite extends NexusModel
 
     protected $fillable = [
         'name', 'base_url', 'secret', 'icon', 'enabled', 'interval_minutes',
-        'last_sync_at', 'last_sync_result', 'last_sync_cursor',
+        'last_sync_at', 'last_sync_total', 'last_sync_hit', 'last_sync_result', 'last_sync_cursor',
     ];
+
+    /** 未命中 = 本轮问过、对方没有的（不单独存列，派生出来） */
+    public function getLastSyncMissAttribute(): int
+    {
+        return max(0, (int) $this->last_sync_total - (int) $this->last_sync_hit);
+    }
+
+    /** 上一次同步是否报错（last_sync_result 以 ERR 开头） */
+    public function lastSyncFailed(): bool
+    {
+        return strncmp((string) $this->last_sync_result, 'ERR', 3) === 0;
+    }
 
     /** 到点了吗？last_sync_at = 0 表示刚绑定、还没同步过，立刻算到期 */
     public function isDue(): bool

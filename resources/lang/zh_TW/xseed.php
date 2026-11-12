@@ -24,11 +24,13 @@ return [
     'col_name' => '站點名稱',
     'col_base_url' => '站點地址',
     'col_enabled' => '狀態',
-    'col_interval' => '間隔（分鐘）',
-    'col_last_sync' => '最後同步',
-    'col_last_sync_result' => '最後同步結果',
+    'col_interval' => '同步間隔',
+    'col_last_sync' => '最後同步時間',
+    'col_hit' => '命中',
+    'col_miss' => '未命中',
     'status_enabled' => '啟用',
     'status_disabled' => '停用',
+    'unit_minutes' => '分鐘',
 
     // 動作
     'action_create' => '新增友站',

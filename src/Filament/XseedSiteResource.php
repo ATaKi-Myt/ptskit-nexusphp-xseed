@@ -99,6 +99,27 @@ class XseedSiteResource extends Resource
                     ->label(XseedRepository::t('col_base_url'))
                     ->searchable()
                     ->limit(40),
+                // 顺序按运营视角排：先认站点，再看节奏与结果，状态放最后
+                TextColumn::make('interval_minutes')
+                    ->label(XseedRepository::t('col_interval'))
+                    ->formatStateUsing(fn ($state) => (int) $state . ' ' . XseedRepository::t('unit_minutes')),
+                TextColumn::make('last_sync_at')
+                    ->label(XseedRepository::t('col_last_sync'))
+                    ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-'),
+                // 命中 / 未命中：数值来自 last_sync_total / last_sync_hit，
+                // 上一轮报错时显示「-」并标红，原始 OK/ERR 文案挂在 tooltip 上
+                TextColumn::make('last_sync_hit')
+                    ->label(XseedRepository::t('col_hit'))
+                    ->formatStateUsing(fn ($state, $record) => $record?->lastSyncFailed() ? '-' : (string) (int) $state)
+                    ->color(fn ($record) => $record?->lastSyncFailed()
+                        ? 'danger'
+                        : ((int) ($record?->last_sync_hit ?? 0) > 0 ? 'success' : 'gray'))
+                    ->tooltip(fn ($record) => ($record?->last_sync_result ?? '') !== '' ? $record->last_sync_result : null),
+                TextColumn::make('last_sync_miss')
+                    ->label(XseedRepository::t('col_miss'))
+                    ->formatStateUsing(fn ($state, $record) => $record?->lastSyncFailed() ? '-' : (string) (int) $state)
+                    ->color(fn ($record) => $record?->lastSyncFailed() ? 'danger' : 'gray')
+                    ->tooltip(fn ($record) => ($record?->last_sync_result ?? '') !== '' ? $record->last_sync_result : null),
                 // 不显示 1/0，直接给「启用 / 停用」
                 TextColumn::make('enabled')
                     ->label(XseedRepository::t('col_enabled'))
@@ -107,14 +128,6 @@ class XseedSiteResource extends Resource
                         ? XseedRepository::t('status_enabled')
                         : XseedRepository::t('status_disabled'))
                     ->color(fn ($record) => $record->enabled ? 'success' : 'gray'),
-                TextColumn::make('interval_minutes')
-                    ->label(XseedRepository::t('col_interval')),
-                TextColumn::make('last_sync_at')
-                    ->label(XseedRepository::t('col_last_sync'))
-                    ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-'),
-                TextColumn::make('last_sync_result')
-                    ->label(XseedRepository::t('col_last_sync_result'))
-                    ->limit(40),
             ])
             ->recordActions([
                 EditAction::make(),

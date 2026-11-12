@@ -55,6 +55,8 @@ class SyncCommand extends Command
                 $this->error(sprintf('  失败：%s', $result['error']));
                 $site->update([
                     'last_sync_at' => time(),
+                    'last_sync_total' => 0,
+                    'last_sync_hit' => 0,
                     'last_sync_result' => mb_substr('ERR ' . $result['error'], 0, 250),
                 ]);
                 continue;
@@ -64,6 +66,8 @@ class SyncCommand extends Command
 
             $site->update([
                 'last_sync_at' => time(),
+                'last_sync_total' => $result['total'],
+                'last_sync_hit' => $result['hit'],
                 'last_sync_result' => sprintf('OK total=%d hit=%d', $result['total'], $result['hit']),
             ]);
         }
