@@ -3,6 +3,7 @@
 namespace NexusPlugin\Xseed\Models;
 
 use App\Models\NexusModel;
+use Nexus\Database\NexusDB;
 
 /**
  * 友站名单
@@ -23,6 +24,46 @@ class XseedSite extends NexusModel
     public function getLastSyncMissAttribute(): int
     {
         return max(0, (int) $this->last_sync_total - (int) $this->last_sync_hit);
+    }
+
+    /**
+     * 累计命中 / 累计未命中
+     *
+     * 表格里显示的是「到现在为止一共命中多少」，不是上一轮的。
+     * 直接数缓存表（每问过一条就落一行，命中记 peer_torrent_id>0），
+     * 所以重建缓存或清表后数字会自然归零，不需要自己维护累加器。
+     */
+    private function peerTotals(): array
+    {
+        static $cache = [];
+
+        $siteId = (int) $this->getKey();
+
+        if (!isset($cache[$siteId])) {
+            $row = NexusDB::table('plugin_xseed_peers')
+                ->where('site_id', $siteId)
+                ->selectRaw('count(*) as total, sum(case when peer_torrent_id > 0 then 1 else 0 end) as hit')
+                ->first();
+
+            $total = (int) ($row->total ?? 0);
+            $hit = (int) ($row->hit ?? 0);
+
+            $cache[$siteId] = [$hit, max(0, $total - $hit)];
+        }
+
+        return $cache[$siteId];
+    }
+
+    /** 累计命中数 */
+    public function getHitTotalAttribute(): int
+    {
+        return $this->peerTotals()[0];
+    }
+
+    /** 累计未命中数 */
+    public function getMissTotalAttribute(): int
+    {
+        return $this->peerTotals()[1];
     }
 
     /** 上一次同步是否报错（last_sync_result 以 ERR 开头） */

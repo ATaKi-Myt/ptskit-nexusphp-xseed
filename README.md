@@ -64,7 +64,7 @@ cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nex
 说明：
 
 - `composer require` 只把代码放进 `vendor/`，不建表，所以后面必须跟 `php artisan plugin install`。重跑整条命令是安全的，迁移幂等。
-- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.2`。依赖冲突时在 `composer require` 后加 `-W`。
+- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.3`。依赖冲突时在 `composer require` 后加 `-W`。
 - 从 `0.1.x` 升级必须把约束改成 `^0.2`（`^0.1` 覆盖不到 `0.2.x`），且**互通的两边都要升**。
 - ⚠️ 只清 `config` / `route` / `view` 三个缓存。**不要**跑 `optimize:clear` 或 `cache:clear`，会把后台令牌权限设置清成默认值。
 
@@ -121,7 +121,7 @@ cd /www/wwwroot/nexus && php artisan xseed:sync --all        # 所有友站，�
 
 同步是增量的：已经在缓存表里问过的种子（不管命中还是未命中）不会重复问，第二次跑通常秒级完成。首次全量分批进行，一轮最多 30 批 × 1000 条 = 3 万条种子；没跑完的**要等下一个同步间隔**才继续（不是一分钟后），想立刻接着跑就再执行一次 `xseed:sync --site=1`。
 
-后台列表里「最后同步时间 / 命中 / 未命中」就是最近一次同步的结果；上一轮失败时命中列显示 `-` 并标红，鼠标悬停可看原始错误。
+后台列表里「最后同步时间」是最近一次同步的时刻；「命中 / 未命中」是**累计**数量（这个站从绑定到现在一共对上多少、没对上多少），鼠标悬停在命中列可看最近一次的原始结果。
 
 ---
 
