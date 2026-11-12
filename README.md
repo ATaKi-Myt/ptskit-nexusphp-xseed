@@ -70,7 +70,7 @@ cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nex
 cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nexusphp-xseed:^0.1" --no-interaction && php artisan plugin install ptskit/nexusphp-xseed && php artisan config:clear && php artisan route:clear && php artisan view:clear
 ```
 
-想钉到确定版本就写死，例如 `composer require "ptskit/nexusphp-xseed:0.1.2"`。若提示依赖冲突，在 `composer require` 后加 `-W`（`--with-all-dependencies`）。
+想钉到确定版本就写死，例如 `composer require "ptskit/nexusphp-xseed:0.1.3"`。若提示依赖冲突，在 `composer require` 后加 `-W`（`--with-all-dependencies`）。
 
 > ⚠️ 只清 `config` / `route` / `view` 三个缓存，**不要**跑 `php artisan optimize:clear` 或 `cache:clear`：NexusPHP 把「后台令牌权限」存在缓存里，清空了会让后台取消的勾选回填，等于越权。
 
@@ -231,6 +231,20 @@ cd /www/wwwroot/nexus && composer remove ptskit/nexusphp-xseed
 ```
 
 第一条回滚迁移（删表），第二条移除代码。别忘了把 crontab 里那条也删掉。
+
+---
+
+## 十、多语言
+
+内置 `zh_CN`（简体）、`zh_TW`（繁体）、`en`（英文）三套文案，落在 `resources/lang/{zh_CN,zh_TW,en}/xseed.php`，三份文件键完全一致。
+
+- **跟随站点语言**：站点切到简体 / 繁体 / 英文，后台（侧栏名、表头、状态、按钮）和前台（详情页那一行的标签、列表页列名）一起跟着变。
+- **默认简体**：站点语言不在这三种之内、或取不到语言设置时，一律回落到 `zh_CN`，不会出现中英混排。
+- **状态列**显示「启用 / 停用」，不是 1 / 0。
+
+想加别的语言：在 `resources/lang/` 下新建目录（如 `ja`），把 `zh_CN/xseed.php` 复制过去翻译即可，没翻到的键自动回落简体。
+
+> 目录名要用 NexusPHP 的 **locale** 名（`zh_CN` / `zh_TW` / `en`），不是前台的语言文件夹名（`chs` / `cht` / `en`）。插件内部已做 `chs → zh_CN`、`cht → zh_TW` 的映射，不用自己处理。
 
 ---
 

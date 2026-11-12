@@ -1,7 +1,12 @@
 <?php
 
 return [
+    // 側欄 / 頁面標題
     'nav_label' => '輔種站點',
+    'model_label' => '輔種站點',
+    'model_label_plural' => '輔種站點',
+
+    // 表單
     'field_name' => '站點名稱',
     'field_name_help' => '前台詳情頁會顯示這個名字。',
     'field_base_url' => '站點地址',
@@ -11,8 +16,22 @@ return [
     'field_icon' => '圖示地址',
     'field_icon_help' => '留空則自動用「站點地址/favicon.ico」。',
     'field_enabled' => '啟用',
+
+    // 列表
+    'col_id' => 'ID',
+    'col_name' => '站點名稱',
+    'col_base_url' => '站點地址',
+    'col_enabled' => '狀態',
     'col_last_sync' => '最後同步',
+    'col_last_sync_result' => '最後同步結果',
+    'status_enabled' => '啟用',
+    'status_disabled' => '停用',
+
+    // 動作
+    'action_create' => '新增友站',
     'action_sync' => '立即同步',
+
+    // 前台
     'row_label' => '輔種站點',
     'col_label' => '輔種',
     'col_tip' => '有相同 info_hash 的友站數量，點擊查看詳情',

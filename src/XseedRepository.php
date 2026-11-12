@@ -23,7 +23,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.1.2';
+    const VERSION = '0.1.3';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
@@ -111,7 +111,35 @@ class XseedRepository extends BasePlugin
         }
 
         // tr() 第三个参数 = noesc，1 表示内容已是 HTML，不要再转义
-        tr(nexus_trans('xseed::xseed.row_label'), implode('&nbsp;&nbsp;', $items), 1);
+        tr(self::t('row_label'), implode('&nbsp;&nbsp;', $items), 1);
+    }
+
+    /**
+     * 统一翻译入口
+     *
+     * 站点语言在 zh_CN / zh_TW / en 之内就跟随站点；不在这三种之内（或当前语言缺键）
+     * 一律回落到 zh_CN —— 即默认中文，不会出现英文混排。
+     */
+    public static function t(string $key, array $replace = []): string
+    {
+        $full = 'xseed::xseed.' . $key;
+
+        $line = nexus_trans($full, $replace, self::locale());
+
+        return $line === $full ? nexus_trans($full, $replace, 'zh_CN') : $line;
+    }
+
+    /** 当前应使用的插件语言，只可能是这三种之一 */
+    private static function locale(): string
+    {
+        static $locale = null;
+
+        if ($locale === null) {
+            $current = function_exists('get_langfolder_cookie') ? get_langfolder_cookie(true) : '';
+            $locale = in_array($current, ['zh_CN', 'zh_TW', 'en'], true) ? $current : 'zh_CN';
+        }
+
+        return $locale;
     }
 
     /**
@@ -135,8 +163,8 @@ class XseedRepository extends BasePlugin
     private function listColumnJs(): string
     {
         $api = getSchemeAndHttpHost(true) . '/plugin-xseed/api/counts';
-        $label = nexus_trans('xseed::xseed.col_label');
-        $tip = nexus_trans('xseed::xseed.col_tip');
+        $label = self::t('col_label');
+        $tip = self::t('col_tip');
 
         $js = <<<JS
 (function () {

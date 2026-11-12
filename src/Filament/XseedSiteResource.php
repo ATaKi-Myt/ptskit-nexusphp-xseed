@@ -26,42 +26,53 @@ class XseedSiteResource extends Resource
 
     protected static ?int $navigationSort = 98;
 
+    /** 侧栏名 = 页面标题，所以两者共用同一套文案 */
     public static function getNavigationLabel(): string
     {
-        return nexus_trans('xseed::xseed.nav_label');
+        return XseedRepository::t('nav_label');
+    }
+
+    public static function getModelLabel(): string
+    {
+        return XseedRepository::t('model_label');
+    }
+
+    public static function getPluralModelLabel(): string
+    {
+        return XseedRepository::t('model_label_plural');
     }
 
     public static function form(Schema $schema): Schema
     {
         return $schema->schema([
             TextInput::make('name')
-                ->label(nexus_trans('xseed::xseed.field_name'))
-                ->helperText(nexus_trans('xseed::xseed.field_name_help'))
+                ->label(XseedRepository::t('field_name'))
+                ->helperText(XseedRepository::t('field_name_help'))
                 ->required()
                 ->maxLength(50)
             ,
             TextInput::make('base_url')
-                ->label(nexus_trans('xseed::xseed.field_base_url'))
-                ->helperText(nexus_trans('xseed::xseed.field_base_url_help'))
+                ->label(XseedRepository::t('field_base_url'))
+                ->helperText(XseedRepository::t('field_base_url_help'))
                 ->required()
                 ->url()
                 ->maxLength(255)
             ,
             TextInput::make('secret')
-                ->label(nexus_trans('xseed::xseed.field_secret'))
-                ->helperText(nexus_trans('xseed::xseed.field_secret_help'))
+                ->label(XseedRepository::t('field_secret'))
+                ->helperText(XseedRepository::t('field_secret_help'))
                 ->password()
                 ->revealable()
                 ->required()
                 ->maxLength(64)
             ,
             TextInput::make('icon')
-                ->label(nexus_trans('xseed::xseed.field_icon'))
-                ->helperText(nexus_trans('xseed::xseed.field_icon_help'))
+                ->label(XseedRepository::t('field_icon'))
+                ->helperText(XseedRepository::t('field_icon_help'))
                 ->maxLength(255)
             ,
             Toggle::make('enabled')
-                ->label(nexus_trans('xseed::xseed.field_enabled'))
+                ->label(XseedRepository::t('field_enabled'))
                 ->default(true)
             ,
         ])->columns(2);
@@ -71,18 +82,34 @@ class XseedSiteResource extends Resource
     {
         return $table
             ->columns([
-                TextColumn::make('id')->sortable(),
-                TextColumn::make('name')->searchable(),
-                TextColumn::make('base_url')->searchable()->limit(40),
-                TextColumn::make('enabled')->badge(),
+                TextColumn::make('id')
+                    ->label(XseedRepository::t('col_id'))
+                    ->sortable(),
+                TextColumn::make('name')
+                    ->label(XseedRepository::t('col_name'))
+                    ->searchable(),
+                TextColumn::make('base_url')
+                    ->label(XseedRepository::t('col_base_url'))
+                    ->searchable()
+                    ->limit(40),
+                // 不显示 1/0，直接给「启用 / 停用」
+                TextColumn::make('enabled')
+                    ->label(XseedRepository::t('col_enabled'))
+                    ->badge()
+                    ->formatStateUsing(fn ($state) => $state
+                        ? XseedRepository::t('status_enabled')
+                        : XseedRepository::t('status_disabled'))
+                    ->color(fn ($record) => $record->enabled ? 'success' : 'gray'),
                 TextColumn::make('last_sync_at')
-                    ->label(nexus_trans('xseed::xseed.col_last_sync'))
+                    ->label(XseedRepository::t('col_last_sync'))
                     ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-'),
-                TextColumn::make('last_sync_result')->limit(40),
+                TextColumn::make('last_sync_result')
+                    ->label(XseedRepository::t('col_last_sync_result'))
+                    ->limit(40),
             ])
             ->recordActions([
                 Action::make('sync')
-                    ->label(nexus_trans('xseed::xseed.action_sync'))
+                    ->label(XseedRepository::t('action_sync'))
                     ->requiresConfirmation()
                     ->action(function (XseedSite $record) {
                         $result = (new XseedRepository())->pullSite($record, 5);
