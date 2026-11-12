@@ -1,0 +1,2 @@
+# 统一按 LF 检出，避免 Windows 上开发、Linux 上部署时出现换行差异
+* text=auto eol=lf

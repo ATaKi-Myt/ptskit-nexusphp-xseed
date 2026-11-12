@@ -1,0 +1,25 @@
+{
+    "name": "ptskit/nexusphp-xseed",
+    "description": "NexusPHP cross-seeding (辅种) mapping plugin",
+    "type": "library",
+    "license": "MIT",
+    "version": "0.1.0",
+    "require": {},
+    "autoload": {
+        "psr-4": {
+            "NexusPlugin\\Xseed\\": "src"
+        }
+    },
+    "scripts": {
+        "post-package-install": [
+            "@php artisan plugin install ptskit/nexusphp-xseed"
+        ]
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "NexusPlugin\\Xseed\\XseedServiceProvider"
+            ]
+        }
+    }
+}
