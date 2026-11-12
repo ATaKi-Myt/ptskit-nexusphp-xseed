@@ -3,6 +3,7 @@
 namespace NexusPlugin\Xseed\Http\Controllers;
 
 use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Cache;
 use Nexus\Database\NexusDB;
 use NexusPlugin\Xseed\Models\XseedSite;
 use NexusPlugin\Xseed\XseedRepository;
@@ -75,40 +76,46 @@ class XseedApiController
         $data = [];
 
         foreach ($rows as $row) {
-            $data[(string) $row->pieces_hash] = (string) $row->id;
+            $hash = (string) $row->pieces_hash;
+            $id = (int) $row->id;
+
+            // 同一套片源可以发好几次（同 hash 多个 torrent_id），
+            // 直接覆盖会让结果随查询顺序变化，取最小的那个保证每次一致。
+            if (!isset($data[$hash]) || $id < (int) $data[$hash]) {
+                $data[$hash] = (string) $id;
+            }
         }
 
         return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => $data]);
     }
 
-    /** 本站列表页用：这批种子各有多少个友站有 */
+    /** 本站列表页用：这批种子各有多少个友站有（列表页内联后的兜底路径） */
     public function counts(Request $request)
     {
         $raw = (string) $request->query('ids', '');
         $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $raw)))));
 
         if (empty($ids)) {
-            return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => []]);
+            return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => (object) []]);
         }
 
         $ids = array_slice($ids, 0, XseedRepository::LIST_COUNT_LIMIT);
 
-        $rows = NexusDB::table('plugin_xseed_peers as p')
-            ->join('plugin_xseed_sites as s', 's.id', '=', 'p.site_id')
-            ->whereIn('p.torrent_id', $ids)
-            ->where('p.peer_torrent_id', '>', 0)
-            ->where('s.enabled', 1)
-            ->groupBy('p.torrent_id')
-            ->select('p.torrent_id', NexusDB::raw('count(distinct p.site_id) as c'))
-            ->get();
-
-        $data = [];
-
-        foreach ($rows as $row) {
-            $data[(int) $row->torrent_id] = (int) $row->c;
+        // 翻页 / 刷新时同一批 id 会重复问，缓存 60 秒足够，省掉重复的聚合查询。
+        // 缓存驱动出问题也不能影响列表页，所以失败就直算。
+        try {
+            $data = Cache::remember(
+                'xseed:counts:' . md5(implode(',', $ids)),
+                60,
+                fn () => (new XseedRepository())->countsByIds($ids)
+            );
+        } catch (\Throwable $throwable) {
+            $data = (new XseedRepository())->countsByIds($ids);
         }
 
-        return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => $data]);
+        // 强制转对象：torrent_id 恰好是连续整数时，json_encode 会把数组编成列表，
+        // 前端按 id 取值就会错位。
+        return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => (object) $data]);
     }
 
     /** 按 X-Xseed-Site 头找到对端站点，找不到 = 未授权 */
