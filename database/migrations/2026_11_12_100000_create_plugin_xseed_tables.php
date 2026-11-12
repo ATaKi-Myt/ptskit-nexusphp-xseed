@@ -15,7 +15,8 @@ return new class extends Migration
             $table->string('name', 50)->default('');
             $table->string('base_url', 255)->default('');
             $table->string('secret', 64)->default('');
-            $table->string('icon', 255)->default('');
+            // 可空：Filament 对空文本输入 dehydrate 成 null，NOT NULL 会直接 1048 报错
+            $table->string('icon', 255)->nullable()->default(null);
             $table->tinyInteger('enabled')->default(1);
             $table->unsignedInteger('last_sync_at')->default(0);
             $table->string('last_sync_result', 255)->default('');
