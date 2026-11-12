@@ -2,14 +2,12 @@
 
 namespace NexusPlugin\Xseed\Filament;
 
-use Filament\Actions\Action;
 use Filament\Actions\BulkActionGroup;
 use Filament\Actions\DeleteAction;
 use Filament\Actions\DeleteBulkAction;
 use Filament\Actions\EditAction;
 use Filament\Forms\Components\TextInput;
 use Filament\Forms\Components\Toggle;
-use Filament\Notifications\Notification;
 use Filament\Resources\Resource;
 use Filament\Schemas\Schema;
 use Filament\Tables\Columns\TextColumn;
@@ -71,6 +69,15 @@ class XseedSiteResource extends Resource
                 ->helperText(XseedRepository::t('field_icon_help'))
                 ->maxLength(255)
             ,
+            TextInput::make('interval_minutes')
+                ->label(XseedRepository::t('field_interval'))
+                ->helperText(XseedRepository::t('field_interval_help'))
+                ->numeric()
+                ->required()
+                ->default(30)
+                ->minValue(1)
+                ->maxValue(1440)
+            ,
             Toggle::make('enabled')
                 ->label(XseedRepository::t('field_enabled'))
                 ->default(true)
@@ -100,6 +107,8 @@ class XseedSiteResource extends Resource
                         ? XseedRepository::t('status_enabled')
                         : XseedRepository::t('status_disabled'))
                     ->color(fn ($record) => $record->enabled ? 'success' : 'gray'),
+                TextColumn::make('interval_minutes')
+                    ->label(XseedRepository::t('col_interval')),
                 TextColumn::make('last_sync_at')
                     ->label(XseedRepository::t('col_last_sync'))
                     ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-'),
@@ -108,23 +117,6 @@ class XseedSiteResource extends Resource
                     ->limit(40),
             ])
             ->recordActions([
-                Action::make('sync')
-                    ->label(XseedRepository::t('action_sync'))
-                    ->requiresConfirmation()
-                    ->action(function (XseedSite $record) {
-                        $result = (new XseedRepository())->pullSite($record, 5);
-
-                        $record->update([
-                            'last_sync_at' => time(),
-                            'last_sync_result' => $result['error'] !== ''
-                                ? mb_substr('ERR ' . $result['error'], 0, 250)
-                                : sprintf('OK total=%d hit=%d', $result['total'], $result['hit']),
-                        ]);
-
-                        $result['error'] !== ''
-                            ? Notification::make()->title($result['error'])->danger()->send()
-                            : Notification::make()->title(sprintf('查询 %d，命中 %d', $result['total'], $result['hit']))->success()->send();
-                    }),
                 EditAction::make(),
                 DeleteAction::make(),
             ])

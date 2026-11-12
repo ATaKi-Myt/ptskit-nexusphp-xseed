@@ -15,6 +15,8 @@ return [
     'field_secret_help' => '双方约定的同一个字符串，用于 HMAC 签名。建议 32 位以上随机串。',
     'field_icon' => '图标地址',
     'field_icon_help' => '留空则自动用「站点地址/favicon.ico」。',
+    'field_interval' => '同步间隔（分钟）',
+    'field_interval_help' => '每隔多少分钟同步一次，默认 30。保存后立刻开始第一次同步，之后自动跑，不用再点按钮。',
     'field_enabled' => '启用',
 
     // 列表
@@ -22,6 +24,7 @@ return [
     'col_name' => '站点名称',
     'col_base_url' => '站点地址',
     'col_enabled' => '状态',
+    'col_interval' => '间隔（分钟）',
     'col_last_sync' => '最后同步',
     'col_last_sync_result' => '最后同步结果',
     'status_enabled' => '启用',
@@ -29,10 +32,9 @@ return [
 
     // 动作
     'action_create' => '添加友站',
-    'action_sync' => '立即同步',
 
     // 前台
     'row_label' => '辅种站点',
     'col_label' => '辅种',
-    'col_tip' => '有相同 info_hash 的友站数量，点击查看详情',
+    'col_tip' => '有同源片源的友站数量，点击查看详情',
 ];

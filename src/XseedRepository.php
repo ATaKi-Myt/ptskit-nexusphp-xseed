@@ -11,11 +11,14 @@ use NexusPlugin\Xseed\Models\XseedSite;
 /**
  * 辅种（cross-seed）映射
  *
- * 核心：跨站只能靠 info_hash 对齐（binary(20) 完全相同），不做 piece 级匹配。
+ * 核心：跨站靠 pieces_hash 对齐（= sha1(info.pieces)，只跟片数据和分片大小有关）。
+ *      不能用 info_hash —— NexusPHP 发种时会往 info 字典写
+ *      source = "[本站URL] 本站名"，所以同一套片源在两站生成的 info_hash 必然不同。
  * 数据只是缓存，随时可清空重建，所以「现在本地、后期中心服务器」不需要改表结构。
  *
  * 三道闸门：
- *   ① 后台/命令行定时跑 pullSite()，把本站 hash 分批发给友站，换回对方的 torrent_id
+ *   ① Laravel 调度每分钟叫一次 xseed:sync，命令自己按每条友站的间隔判断到期才同步，
+ *      把本站 pieces_hash 分批发给友站，换回对方的 torrent_id
  *   ② 前台详情页 torrent_detail_before_desc 钩子输出一行站点图标
  *   ③ 前台列表页用 torrent_title_suffix 钩子延迟注入一段 JS，异步补一列
  */
@@ -23,12 +26,15 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.1.3';
+    const VERSION = '0.2.0';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
-    /** 一次请求带多少 hash 去问对端 */
+    /** 一次请求带多少 pieces_hash 去问对端 */
     const CHUNK_SIZE = 1000;
+
+    /** 定时任务每次最多问多少批（防止一次跑太久） */
+    const MAX_CHUNKS_PER_RUN = 30;
 
     /** 列表页一列最多查多少个种子 */
     const LIST_COUNT_LIMIT = 200;
@@ -237,11 +243,11 @@ JS;
     // ---------------------------------------------------------------- 同步
 
     /**
-     * 同步一个友站：分批把本站还没问过的 hash 发过去，换回对方的 torrent_id
+     * 同步一个友站：分批把本站还没问过的 pieces_hash 发过去，换回对方的 torrent_id
      *
      * @return array{total:int,hit:int,chunks:int,error:string}
      */
-    public function pullSite(XseedSite $site, int $maxChunks = 2000): array
+    public function pullSite(XseedSite $site, int $maxChunks = self::MAX_CHUNKS_PER_RUN): array
     {
         $result = ['total' => 0, 'hit' => 0, 'chunks' => 0, 'error' => ''];
 
@@ -257,13 +263,13 @@ JS;
                 break;
             }
 
-            $hashes = [];
+            $pieces = [];
             foreach ($rows as $row) {
-                $hashes[] = bin2hex($row->info_hash);
+                $pieces[] = $row->pieces_hash;
             }
 
             try {
-                $mapped = $this->remoteLookup($site, $hashes);
+                $mapped = $this->remoteLookup($site, $pieces);
             } catch (\Throwable $throwable) {
                 $result['error'] = $throwable->getMessage();
                 break;
@@ -273,13 +279,13 @@ JS;
             $insert = [];
 
             foreach ($rows as $row) {
-                $hex = bin2hex($row->info_hash);
-                $peerId = isset($mapped[$hex]) ? (int) $mapped[$hex] : 0;
+                $hash = (string) $row->pieces_hash;
+                $peerId = isset($mapped[$hash]) ? (int) $mapped[$hash] : 0;
 
                 $insert[] = [
                     'torrent_id' => (int) $row->id,
                     'site_id' => (int) $site->id,
-                    'info_hash' => $row->info_hash,
+                    'pieces_hash' => $hash,
                     'peer_torrent_id' => $peerId,
                     'checked_at' => $now,
                 ];
@@ -291,7 +297,7 @@ JS;
 
             NexusDB::table('plugin_xseed_peers')->upsert(
                 $insert,
-                ['site_id', 'info_hash'],
+                ['site_id', 'pieces_hash'],
                 ['peer_torrent_id', 'checked_at']
             );
 
@@ -302,24 +308,32 @@ JS;
         return $result;
     }
 
-    /** 本站「这个站还没问过」的种子（limit 保证内存可控） */
+    /**
+     * 本站「这个站还没问过」的种子
+     *
+     * 用 pieces_hash 对齐（不是 info_hash）：NexusPHP 发种时会往 info 字典里写
+     * source = "[本站URL] 本站名"，两站的 info_hash 必然不同，只有 pieces_hash 跨站稳定。
+     * pieces_hash 为空的老种子跳过 —— 主程序每天 01:00 的 torrent:load_pieces_hash 会补。
+     */
     private function nextDiff(int $siteId, int $limit)
     {
         return NexusDB::table('torrents as t')
             ->leftJoin('plugin_xseed_peers as p', function ($join) use ($siteId) {
-                $join->on('p.torrent_id', '=', 't.id')->where('p.site_id', '=', $siteId);
+                $join->on('p.pieces_hash', '=', 't.pieces_hash')
+                    ->where('p.site_id', '=', $siteId);
             })
             ->whereNull('p.id')
+            ->where('t.pieces_hash', '<>', '')
             ->orderBy('t.id')
             ->limit($limit)
-            ->select('t.id', 't.info_hash')
+            ->select('t.id', 't.pieces_hash')
             ->get();
     }
 
-    /** 问对端：给我这批 hash 对应的 torrent_id */
-    private function remoteLookup(XseedSite $site, array $hashes): array
+    /** 问对端：给我这批 pieces_hash 对应的 torrent_id */
+    private function remoteLookup(XseedSite $site, array $pieces): array
     {
-        $body = json_encode(['hashes' => array_values($hashes)], JSON_UNESCAPED_SLASHES);
+        $body = json_encode(['pieces' => array_values($pieces)], JSON_UNESCAPED_SLASHES);
         $ts = (string) time();
 
         $response = Http::withHeaders([

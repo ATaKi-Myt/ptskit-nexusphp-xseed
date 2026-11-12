@@ -3,6 +3,7 @@
 namespace NexusPlugin\Xseed;
 
 use Filament\Panel;
+use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Route;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
@@ -41,6 +42,17 @@ class XseedServiceProvider extends PackageServiceProvider
         //    这里用空 group 加载，路由就完全没有中间件 —— 跨站调用要的正是这个。
         if (!$this->app->routesAreCached()) {
             Route::group([], dirname(__DIR__) . '/routes/web.php');
+        }
+
+        // 自动同步：不要求站点另外配 cron —— NexusPHP 本来就在跑 schedule:run
+        // （routes/console.php 里的 horizon:snapshot 靠它）。这里只往调度表塞一条，
+        // 每分钟叫一次；具体哪个友站到期，由命令内部按 interval_minutes 判断。
+        if ($this->app->runningInConsole()) {
+            $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+                $schedule->command('xseed:sync')
+                    ->everyMinute()
+                    ->withoutOverlapping();
+            });
         }
     }
 }

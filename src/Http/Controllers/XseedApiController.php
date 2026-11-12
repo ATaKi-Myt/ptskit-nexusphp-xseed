@@ -15,7 +15,7 @@ use NexusPlugin\Xseed\XseedRepository;
  */
 class XseedApiController
 {
-    /** 对端拿一批 hash 来问「这些在我这儿是哪个种子」 */
+    /** 对端拿一批 pieces_hash 来问「这些在我这儿是哪个种子」 */
     public function lookup(Request $request)
     {
         $site = $this->verifySite($request);
@@ -37,39 +37,45 @@ class XseedApiController
             return response()->json(['ret' => -1, 'msg' => 'bad signature'], 401);
         }
 
-        $hashes = json_decode($raw, true);
-        $hashes = is_array($hashes) ? ($hashes['hashes'] ?? []) : [];
+        $json = json_decode($raw, true);
+        $pieces = is_array($json) ? ($json['pieces'] ?? []) : [];
 
-        if (!is_array($hashes) || empty($hashes)) {
+        // 0.1.x 的老对端发的还是 {"hashes": [...]}，明确回一条错误，
+        // 免得对端只看到「命中 0」以为是没同源种子。
+        if (empty($pieces) && !empty($json['hashes'] ?? [])) {
+            return response()->json([
+                'ret' => -1,
+                'msg' => 'peer expects "pieces", please upgrade xseed to 0.2+ on the other side',
+            ], 400);
+        }
+
+        if (!is_array($pieces) || empty($pieces)) {
             return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => []]);
         }
 
-        $binaries = [];
-        $map = [];
+        $wanted = [];
 
-        foreach (array_slice(array_values(array_unique($hashes)), 0, XseedRepository::CHUNK_SIZE) as $hash) {
+        foreach (array_slice(array_values(array_unique($pieces)), 0, XseedRepository::CHUNK_SIZE) as $hash) {
             $hash = strtolower(trim((string) $hash));
             if (preg_match('/^[0-9a-f]{40}$/', $hash)) {
-                $bin = hex2bin($hash);
-                $binaries[] = $bin;
-                $map[$bin] = $hash;
+                $wanted[] = $hash;
             }
         }
 
-        if (empty($binaries)) {
+        if (empty($wanted)) {
             return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => []]);
         }
 
         $rows = NexusDB::table('torrents')
-            ->whereIn('info_hash', $binaries)
-            ->select('id', 'info_hash')
+            ->whereIn('pieces_hash', $wanted)
+            ->where('pieces_hash', '<>', '')
+            ->select('id', 'pieces_hash')
             ->get();
 
         $data = [];
 
         foreach ($rows as $row) {
-            $hex = $map[$row->info_hash] ?? bin2hex($row->info_hash);
-            $data[$hex] = (string) $row->id;
+            $data[(string) $row->pieces_hash] = (string) $row->id;
         }
 
         return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => $data]);

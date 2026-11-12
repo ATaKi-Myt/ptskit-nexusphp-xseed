@@ -15,6 +15,8 @@ return [
     'field_secret_help' => 'The same string on both sides, used for HMAC signing. Use 32+ random characters.',
     'field_icon' => 'Icon URL',
     'field_icon_help' => 'Leave empty to use "<site URL>/favicon.ico".',
+    'field_interval' => 'Sync interval (minutes)',
+    'field_interval_help' => 'How often to sync, default 30. The first sync starts right after saving; no manual button needed.',
     'field_enabled' => 'Enabled',
 
     // Table
@@ -22,6 +24,7 @@ return [
     'col_name' => 'Site name',
     'col_base_url' => 'Site URL',
     'col_enabled' => 'Status',
+    'col_interval' => 'Interval (min)',
     'col_last_sync' => 'Last sync',
     'col_last_sync_result' => 'Last sync result',
     'status_enabled' => 'Enabled',
@@ -29,10 +32,9 @@ return [
 
     // Actions
     'action_create' => 'Add site',
-    'action_sync' => 'Sync now',
 
     // Front-end
     'row_label' => 'Cross-seed sites',
     'col_label' => 'XSeed',
-    'col_tip' => 'Number of partner sites that have the same info_hash',
+    'col_tip' => 'Number of partner sites that have the same files, click for details',
 ];
