@@ -31,7 +31,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.2.4';
+    const VERSION = '0.2.5';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
@@ -47,8 +47,14 @@ class XseedRepository extends BasePlugin
     /** 整轮（所有友站加起来）的上限，防止站点多时单轮拖过一分钟 */
     const TOTAL_BUDGET_SECONDS = 55;
 
-    /** 每轮最多做多少批复核（首扫没扫完时不做，免得拖慢） */
-    const REVIEW_CHUNKS_PER_RUN = 1;
+    /**
+     * 每轮做多少批复核（每批 1000 条），可用 XSEED_REVIEW_CHUNKS 覆盖
+     *
+     * 复核不是按时间阈值触发的，而是「谁最久没核对就先查谁」，每轮固定几批。
+     * 所以全量轮转周期 ≈ 命中数 ÷ (本值 × 每天轮数)，例如 6 万条命中、30 分钟一轮、
+     * 本值 4 ⇒ 约 7.5 小时把所有命中核对一遍；调到 10 就是 3 小时。
+     */
+    const REVIEW_CHUNKS_PER_RUN = 4;
 
     /** 列表页一列最多查多少个种子 */
     const LIST_COUNT_LIMIT = 200;
@@ -386,7 +392,7 @@ JS;
         XseedSite $site,
         int $maxChunks = self::MAX_CHUNKS_PER_RUN,
         int $budgetSeconds = self::RUN_BUDGET_SECONDS,
-        int $reviewChunks = self::REVIEW_CHUNKS_PER_RUN
+        ?int $reviewChunks = null
     ): array {
         $result = ['total' => 0, 'hit' => 0, 'chunks' => 0, 'review' => 0, 'error' => ''];
 
@@ -401,9 +407,10 @@ JS;
         }
 
         $startedAt = microtime(true);
+        $reviewSince = time();
         $siteId = (int) $site->id;
         $cursor = $this->syncCursor($site);
-        $reviewLeft = max(0, $reviewChunks);
+        $reviewLeft = max(0, $reviewChunks ?? $this->reviewChunks());
         $changedChecked = false;
         $slowDone = false;
 
@@ -447,7 +454,7 @@ JS;
                 }
 
                 $reviewLeft--;
-                $hashes = $this->nextStale($siteId, self::CHUNK_SIZE);
+                $hashes = $this->nextStale($siteId, self::CHUNK_SIZE, $reviewSince);
 
                 if ($hashes === []) {
                     break;
@@ -601,16 +608,29 @@ JS;
             ->get();
     }
 
-    /** 该复核的 hash：命中过、但最近一次核对已经超过 TTL */
-    private function nextStale(int $siteId, int $limit): array
+    /**
+     * 该复核的 hash：命中过的记录里，最久没核对的那一批
+     *
+     * $before 是本轮开始时间：本轮查过的记录会被 touch 到 >= $before，
+     * 这样同一轮不会把同一条反复捞出来（命中总数不足一批时尤其明显）。
+     */
+    private function nextStale(int $siteId, int $limit, int $before = 0): array
     {
         // 不用 distinct：MySQL 8 的 ONLY_FULL_GROUP_BY 下
-        // `select distinct x ... order by y` 会直接报 3065，重复的在下面去重即可
-        $rows = NexusDB::table('plugin_xseed_peers')
+        // `select distinct x ... order by y` 会直接报 3065，重复的在下面去重即可。
+        //
+        // 不设时间阈值：靠 order by checked_at 天然轮转 —— 查过的会被 touch 到 now，
+        // 自动排到队尾。设阈值反而会出现「删了种要等 7 天才清理」这种反直觉行为
+        // （升级后所有老记录都得等满阈值才第一次进池）。
+        $query = NexusDB::table('plugin_xseed_peers')
             ->where('site_id', $siteId)
-            ->where('peer_torrent_id', '>', 0)
-            ->where('checked_at', '<', time() - $this->reviewTtl())
-            ->orderBy('checked_at')
+            ->where('peer_torrent_id', '>', 0);
+
+        if ($before > 0) {
+            $query->where('checked_at', '<', $before);
+        }
+
+        $rows = $query->orderBy('checked_at')
             ->limit($limit)
             ->pluck('pieces_hash');
 
@@ -684,12 +704,63 @@ JS;
         }
     }
 
-    /** 命中记录多久复核一次，默认 7 天，可用 XSEED_REVIEW_DAYS 覆盖 */
-    private function reviewTtl(): int
+    /** 每轮复核批复数，可用 XSEED_REVIEW_CHUNKS 覆盖（想更快发现对端删种就调大） */
+    public function reviewChunks(): int
     {
-        $days = (int) env('XSEED_REVIEW_DAYS', 7);
+        return max(1, (int) env('XSEED_REVIEW_CHUNKS', self::REVIEW_CHUNKS_PER_RUN));
+    }
 
-        return max(1, $days) * 86400;
+    /**
+     * 手动把某个友站的命中全部核对一遍（xseed:review）
+     *
+     * 按「最久没核对」的顺序一路查到底，查过的会排到队尾，所以重复跑会接着上次的地方走。
+     *
+     * @return array{checked:int,cleared:int,batches:int,error:string}
+     */
+    public function reviewSite(XseedSite $site, int $maxBatches = 0, int $budgetSeconds = 0): array
+    {
+        $result = ['checked' => 0, 'cleared' => 0, 'batches' => 0, 'error' => ''];
+        $startedAt = microtime(true);
+        $since = time();
+        $lastBatch = [];
+
+        while (true) {
+            if ($maxBatches > 0 && $result['batches'] >= $maxBatches) {
+                break;
+            }
+
+            if ($budgetSeconds > 0 && microtime(true) - $startedAt >= $budgetSeconds) {
+                break;
+            }
+
+            $hashes = $this->nextStale((int) $site->id, self::CHUNK_SIZE, $since);
+
+            if ($hashes === []) {
+                break;
+            }
+
+            // 兜底：正常情况 touch 之后不会再取到同一批，万一更新没生效就停，别死循环
+            if ($hashes === $lastBatch) {
+                break;
+            }
+
+            $lastBatch = $hashes;
+
+            $batch = ['total' => 0, 'hit' => 0, 'chunks' => 0, 'review' => 0, 'error' => ''];
+
+            try {
+                $this->reviewBatch($site, $hashes, $batch);
+            } catch (\Throwable $throwable) {
+                $result['error'] = $throwable->getMessage();
+                break;
+            }
+
+            $result['checked'] += count($hashes);
+            $result['cleared'] += $batch['review'];
+            $result['batches']++;
+        }
+
+        return $result;
     }
 
     private function quoteList(array $values): string

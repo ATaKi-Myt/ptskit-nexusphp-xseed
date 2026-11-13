@@ -7,6 +7,7 @@ use Illuminate\Console\Scheduling\Schedule;
 use Illuminate\Support\Facades\Route;
 use Spatie\LaravelPackageTools\Package;
 use Spatie\LaravelPackageTools\PackageServiceProvider;
+use NexusPlugin\Xseed\Console\ReviewCommand;
 use NexusPlugin\Xseed\Console\SyncCommand;
 
 class XseedServiceProvider extends PackageServiceProvider
@@ -17,6 +18,7 @@ class XseedServiceProvider extends PackageServiceProvider
             ->hasTranslations()
             ->hasCommands([
                 SyncCommand::class,
+                ReviewCommand::class,
             ]);
     }
 
