@@ -3,6 +3,7 @@
 namespace NexusPlugin\Xseed\Models;
 
 use App\Models\NexusModel;
+use Illuminate\Support\Facades\Crypt;
 use Nexus\Database\NexusDB;
 
 /**
@@ -10,15 +11,53 @@ use Nexus\Database\NexusDB;
  *
  * enabled=1 才会参与同步。secret 与对端站点配置里填的必须是同一个值。
  * interval_minutes 决定这个站多久同步一次（默认 30 分钟）。
+ *
+ * secret 以 `enc:` 前缀加密存库（v0.2.6 起）：拖库拿到的只是密文，
+ * 不能直接拿去冒充本站调对端接口。老明文数据无需手工处理，
+ * 读的时候没前缀就当明文用，下次在后台保存时自动加密。
  */
 class XseedSite extends NexusModel
 {
+    /** 库里 secret 的密文前缀；没有这个前缀的按明文兼容 */
+    const SECRET_PREFIX = 'enc:';
+
     protected $table = 'plugin_xseed_sites';
 
     protected $fillable = [
         'name', 'base_url', 'secret', 'icon', 'enabled', 'interval_minutes',
         'last_sync_at', 'last_sync_total', 'last_sync_hit', 'last_sync_result', 'last_sync_cursor',
     ];
+
+    public function getSecretAttribute($value): string
+    {
+        if (!is_string($value) || $value === '') {
+            return '';
+        }
+
+        if (strncmp($value, self::SECRET_PREFIX, 4) !== 0) {
+            return $value;      // 老数据，明文
+        }
+
+        try {
+            return Crypt::decryptString(substr($value, 4));
+        } catch (\Throwable $throwable) {
+            // 换过 APP_KEY 之类，解不开就当作没配，后台会显示「密钥为空」
+            if (function_exists('do_log')) {
+                do_log('[xseed] decrypt secret failed, re-fill it in admin: ' . $throwable->getMessage(), 'error');
+            }
+
+            return '';
+        }
+    }
+
+    public function setSecretAttribute($value): void
+    {
+        $value = (string) $value;
+
+        $this->attributes['secret'] = $value === ''
+            ? ''
+            : self::SECRET_PREFIX . Crypt::encryptString($value);
+    }
 
     /** 未命中 = 本轮问过、对方没有的（不单独存列，派生出来） */
     public function getLastSyncMissAttribute(): int
@@ -82,6 +121,23 @@ class XseedSite extends NexusModel
         $interval = max(1, (int) ($this->interval_minutes ?: 30)) * 60;
 
         return (time() - (int) $this->last_sync_at) >= $interval;
+    }
+
+    /**
+     * 是不是明显停摆了（超过 3 倍间隔没同步）
+     *
+     * 后台把「最后同步时间」标红。之前这个字段只是慢慢变旧，没人会发现
+     * 同步被残留的 withoutOverlapping 锁挡住了一整天。
+     */
+    public function isStalled(): bool
+    {
+        if ((int) $this->last_sync_at === 0) {
+            return false;   // 刚绑定还没跑过，不算异常
+        }
+
+        $interval = max(1, (int) ($this->interval_minutes ?: 30)) * 60;
+
+        return (time() - (int) $this->last_sync_at) > $interval * 3;
     }
 
     /** 取站点入口图标，没配就用 favicon */

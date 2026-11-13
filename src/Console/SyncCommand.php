@@ -3,6 +3,7 @@
 namespace NexusPlugin\Xseed\Console;
 
 use Illuminate\Console\Command;
+use Nexus\Database\NexusDB;
 use NexusPlugin\Xseed\Models\XseedSite;
 use NexusPlugin\Xseed\XseedRepository;
 
@@ -16,10 +17,15 @@ use NexusPlugin\Xseed\XseedRepository;
  * 所以首装 6 万条种子两三轮就能推完，之后每轮只处理新增 + 少量复核，
  * 不会重复扫已经问过的部分。
  *
+ * 用 MySQL GET_LOCK 互斥：调度的 withoutOverlapping 只管调度器自己，
+ * 手动执行这条命令不受它约束，两边撞上会重复扫同一段。
+ *
  * 手动强制同步：php artisan xseed:sync --site=1
  */
 class SyncCommand extends Command
 {
+    const LOCK_NAME = 'nexus_xseed_sync';
+
     protected $signature = 'xseed:sync
         {--site= : 只同步指定友站 id（忽略间隔，立即执行）}
         {--all : 忽略间隔，同步所有启用的友站}
@@ -28,6 +34,20 @@ class SyncCommand extends Command
     protected $description = '同步友站辅种映射（按每条友站设置的间隔自动到期）';
 
     public function handle(): int
+    {
+        if (!$this->acquireLock()) {
+            $this->info('上一轮同步还在跑，本次跳过。');
+            return 0;
+        }
+
+        try {
+            return $this->run();
+        } finally {
+            $this->releaseLock();
+        }
+    }
+
+    private function run(): int
     {
         $query = XseedSite::query()->where('enabled', 1);
 
@@ -121,5 +141,26 @@ class SyncCommand extends Command
         }
 
         return 0;
+    }
+
+    /** 拿不到锁机制就直接跑，别把同步本身卡死 */
+    private function acquireLock(): bool
+    {
+        try {
+            $rows = NexusDB::select("select get_lock('" . self::LOCK_NAME . "', 0) as got");
+
+            return (int) ($rows[0]['got'] ?? 0) === 1;
+        } catch (\Throwable $throwable) {
+            return true;
+        }
+    }
+
+    private function releaseLock(): void
+    {
+        try {
+            NexusDB::select("select release_lock('" . self::LOCK_NAME . "') as released");
+        } catch (\Throwable $throwable) {
+            // 连接断了锁也会自己释放，忽略
+        }
     }
 }

@@ -64,7 +64,7 @@ cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nex
 说明：
 
 - `composer require` 只把代码放进 `vendor/`，不建表，所以后面必须跟 `php artisan plugin install`。重跑整条命令是安全的，迁移幂等。
-- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.5`。依赖冲突时在 `composer require` 后加 `-W`。
+- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.6`。依赖冲突时在 `composer require` 后加 `-W`。
 - 从 `0.1.x` 升级必须把约束改成 `^0.2`（`^0.1` 覆盖不到 `0.2.x`），且**互通的两边都要升**。
 - ⚠️ 只清 `config` / `route` / `view` 三个缓存。**不要**跑 `optimize:clear` 或 `cache:clear`，会把后台令牌权限设置清成默认值。
 
@@ -91,7 +91,8 @@ cd /www/wwwroot/nexus && php artisan list | grep xseed && php artisan schedule:l
 
 1. A 里填 B 的域名，B 里填 A 的域名，**都不要填自己的**。
 2. 两边 secret 必须同一个值。
-3. 地址末尾不带斜杠，`https` / `http` 要和对方实际访问方式一致。
+3. 地址末尾不带斜杠，`https` / `http` 要和对方实际访问方式一致；只认 `http(s)://`，填别的会被拒绝。
+4. secret 在库里加密存（`enc:` 前缀），拖库拿不到明文。**副作用**：如果换了站点 `.env` 的 `APP_KEY`，旧密钥就解不开了，后台会显示「通讯密钥为空」，重填一次即可。
 
 只在一侧配置也能用，但只有配了的那侧能看到结果；要双向显示就两侧都配。
 
@@ -150,7 +151,7 @@ cd /www/wwwroot/nexus && php artisan xseed:review --site=1  # 只核对指定友
 | `expired` | 两台服务器时间相差超过 5 分钟，先校准时间 |
 | 后台没有「辅种站点」菜单 | `php artisan package:discover`，再 `config:clear` |
 | `php artisan list` 没有 `xseed:sync` | 同上 |
-| 保存后一直没同步 | 站点没跑 `schedule:run`，或 `schedule:list` 里看不到 `xseed:sync` |
+| 保存后一直没同步 | 站点没跑 `schedule:run`，或 `schedule:list` 里看不到 `xseed:sync`；后台「最后同步时间」标红就是这种情况 |
 | 列表页没多出「辅种」列 | 浏览器缓存了旧 JS，强刷；或该页不是标准种子列表（收藏页等已做兜底，自定义页面可能不触发） |
 | 详情页不显示 | 只对登录用户显示，且该种子确实没有同源 |
 | 命中率极低 / 全是 0 | ① 两边版本不一致（对端 <0.2）② 分片大小或文件清单不同 ③ 本地 `pieces_hash` 为空 |

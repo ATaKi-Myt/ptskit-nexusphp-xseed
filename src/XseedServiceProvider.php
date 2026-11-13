@@ -51,9 +51,11 @@ class XseedServiceProvider extends PackageServiceProvider
         // 每分钟叫一次；具体哪个友站到期，由命令内部按 interval_minutes 判断。
         if ($this->app->runningInConsole()) {
             $this->callAfterResolving(Schedule::class, function (Schedule $schedule) {
+                // 锁 10 分钟而不是默认的 24 小时：万一进程被 OOM 杀掉 / kill -9，
+                // 残留的锁最多挡 10 分钟，不会让同步静默停摆一整天。
                 $schedule->command('xseed:sync')
                     ->everyMinute()
-                    ->withoutOverlapping();
+                    ->withoutOverlapping(10);
             });
         }
     }

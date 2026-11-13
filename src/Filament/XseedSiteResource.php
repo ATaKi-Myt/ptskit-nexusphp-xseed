@@ -54,6 +54,9 @@ class XseedSiteResource extends Resource
                 ->helperText(XseedRepository::t('field_base_url_help'))
                 ->required()
                 ->url()
+                // url() 规则放行 javascript:// 之类，而这里的值会被拼成前台 <a href>，
+                // 必须卡死只允许 http(s)
+                ->rules(['regex:/^https?:\/\//i'])
                 ->maxLength(255)
             ,
             TextInput::make('secret')
@@ -107,7 +110,10 @@ class XseedSiteResource extends Resource
                     ->formatStateUsing(fn ($state) => (int) $state . ' ' . XseedRepository::t('unit_minutes')),
                 TextColumn::make('last_sync_at')
                     ->label(XseedRepository::t('col_last_sync'))
-                    ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-'),
+                    ->formatStateUsing(fn ($state) => $state ? date('Y-m-d H:i', (int) $state) : '-')
+                    // 超过 3 倍间隔没同步就标红：调度被锁挡住、cron 停了都靠这个发现
+                    ->color(fn ($record) => $record && $record->isStalled() ? 'danger' : 'gray')
+                    ->badge(fn ($record) => $record && $record->isStalled()),
                 // 命中 / 未命中是「累计」值，直接数缓存表，不是上一轮的
                 TextColumn::make('hit_total')
                     ->label(XseedRepository::t('col_hit'))

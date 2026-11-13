@@ -92,6 +92,10 @@ class XseedApiController
     /** 本站列表页用：这批种子各有多少个友站有（列表页内联后的兜底路径） */
     public function counts(Request $request)
     {
+        if (!$this->allowCounts($request)) {
+            return response()->json(['ret' => -1, 'msg' => 'too many requests'], 429);
+        }
+
         $raw = (string) $request->query('ids', '');
         $ids = array_values(array_unique(array_filter(array_map('intval', explode(',', $raw)))));
 
@@ -116,6 +120,32 @@ class XseedApiController
         // 强制转对象：torrent_id 恰好是连续整数时，json_encode 会把数组编成列表，
         // 前端按 id 取值就会错位。
         return response()->json(['ret' => 0, 'msg' => 'OK', 'data' => (object) $data]);
+    }
+
+    /**
+     * 按 IP 做分钟级限流
+     *
+     * 这个接口不需要签名（列表页会自己调），所以谁都能刷；不同 id 组合还能绕过
+     * 60 秒结果缓存，等于每次请求一条聚合查询。正常用户一页只调一次，
+     * 放 300 次/分钟足够，越是脚本越容易被挡。
+     *
+     * 按分钟分桶，key 自带 TTL，不用维护窗口状态。
+     */
+    private function allowCounts(Request $request): bool
+    {
+        $key = 'xseed:rl:' . md5((string) $request->ip()) . ':' . intdiv(time(), 60);
+
+        try {
+            $count = (int) Cache::increment($key);
+
+            if ($count === 1) {
+                Cache::put($key, 1, 120);
+            }
+
+            return $count <= 300;
+        } catch (\Throwable $throwable) {
+            return true;    // 缓存不可用就别拦，列表页优先
+        }
     }
 
     /** 按 X-Xseed-Site 头找到对端站点，找不到 = 未授权 */

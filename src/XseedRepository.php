@@ -31,7 +31,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.2.5';
+    const VERSION = '0.2.6';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
@@ -55,6 +55,9 @@ class XseedRepository extends BasePlugin
      * 本值 4 ⇒ 约 7.5 小时把所有命中核对一遍；调到 10 就是 3 小时。
      */
     const REVIEW_CHUNKS_PER_RUN = 4;
+
+    /** 「核对过但当时没命中」的记录，隔多少天复查一次（防误判后永久卡 0） */
+    const MISS_RECHECK_DAYS = 30;
 
     /** 列表页一列最多查多少个种子 */
     const LIST_COUNT_LIMIT = 200;
@@ -106,14 +109,19 @@ class XseedRepository extends BasePlugin
             return;
         }
 
-        $rows = NexusDB::table('plugin_xseed_peers as p')
-            ->join('plugin_xseed_sites as s', 's.id', '=', 'p.site_id')
-            ->where('p.torrent_id', $torrentId)
-            ->where('p.peer_torrent_id', '>', 0)
-            ->where('s.enabled', 1)
-            ->orderBy('s.id')
-            ->select('s.name', 's.base_url', 's.icon', 'p.peer_torrent_id')
-            ->get();
+        // 这里出任何问题都不能让详情页 500 —— 辅种只是个装饰行
+        try {
+            $rows = NexusDB::table('plugin_xseed_peers as p')
+                ->join('plugin_xseed_sites as s', 's.id', '=', 'p.site_id')
+                ->where('p.torrent_id', $torrentId)
+                ->where('p.peer_torrent_id', '>', 0)
+                ->where('s.enabled', 1)
+                ->orderBy('s.id')
+                ->select('s.name', 's.base_url', 's.icon', 'p.peer_torrent_id')
+                ->get();
+        } catch (\Throwable $throwable) {
+            return;
+        }
 
         if ($rows->isEmpty()) {
             return;
@@ -123,7 +131,19 @@ class XseedRepository extends BasePlugin
 
         foreach ($rows as $row) {
             $baseUrl = rtrim((string) $row->base_url, '/');
+
+            // 只认 http/https：Filament 的 url() 规则放行 javascript:// 之类，
+            // 真填进来会变成前台存储型 XSS。
+            if (!preg_match('#^https?://#i', $baseUrl)) {
+                continue;
+            }
+
             $icon = !empty($row->icon) ? $row->icon : $baseUrl . '/favicon.ico';
+
+            if (!preg_match('#^https?://#i', (string) $icon)) {
+                $icon = $baseUrl . '/favicon.ico';
+            }
+
             $url = sprintf('%s/details.php?id=%d', $baseUrl, (int) $row->peer_torrent_id);
             $name = htmlspecialchars((string) $row->name, ENT_QUOTES);
 
@@ -136,6 +156,10 @@ class XseedRepository extends BasePlugin
                 htmlspecialchars((string) $icon, ENT_QUOTES),
                 $name
             );
+        }
+
+        if ($items === []) {
+            return;
         }
 
         // tr() 第三个参数 = noesc，1 表示内容已是 HTML，不要再转义
@@ -197,7 +221,16 @@ class XseedRepository extends BasePlugin
             return $rows;
         }
 
-        $counts = $this->countsByIds($ids);
+        // 辅种列只是附加信息：表缺失、DB 抖动、锁超时都不该把种子列表页打成 500
+        try {
+            $counts = $this->countsByIds($ids);
+        } catch (\Throwable $throwable) {
+            if (function_exists('do_log')) {
+                do_log('[xseed] attach list counts failed: ' . $throwable->getMessage(), 'error');
+            }
+
+            return $rows;
+        }
 
         foreach ($rows as $key => $row) {
             $id = is_array($row) ? (int) ($row['id'] ?? 0) : (int) ($row->id ?? 0);
@@ -406,6 +439,13 @@ JS;
             return $result;
         }
 
+        $schemaProblem = $this->schemaProblem();
+
+        if ($schemaProblem !== null) {
+            $result['error'] = $schemaProblem;
+            return $result;
+        }
+
         $startedAt = microtime(true);
         $reviewSince = time();
         $siteId = (int) $site->id;
@@ -413,6 +453,7 @@ JS;
         $reviewLeft = max(0, $reviewChunks ?? $this->reviewChunks());
         $changedChecked = false;
         $slowDone = false;
+        $lastFreshId = 0;
 
         while ($result['chunks'] < $maxChunks) {
             if (microtime(true) - $startedAt >= $budgetSeconds) {
@@ -470,6 +511,17 @@ JS;
                 $result['chunks']++;
                 continue;
             }
+
+            // 同一批被连续取到 = upsert 没写进去（典型原因：迁移没跑，唯一键还是
+            // (site_id, pieces_hash)），继续跑只会空转烧对端流量，直接停下来报错。
+            $firstId = (int) $rows->first()->id;
+
+            if (!$isChanged && $firstId === $lastFreshId) {
+                $result['error'] = 'stuck on same batch, run: php artisan plugin install ptskit/nexusphp-xseed';
+                break;
+            }
+
+            $lastFreshId = $firstId;
 
             $pieces = [];
             $maxId = 0;
@@ -622,9 +674,17 @@ JS;
         // 不设时间阈值：靠 order by checked_at 天然轮转 —— 查过的会被 touch 到 now，
         // 自动排到队尾。设阈值反而会出现「删了种要等 7 天才清理」这种反直觉行为
         // （升级后所有老记录都得等满阈值才第一次进池）。
+        $missSince = time() - self::MISS_RECHECK_DAYS * 86400;
+
         $query = NexusDB::table('plugin_xseed_peers')
             ->where('site_id', $siteId)
-            ->where('peer_torrent_id', '>', 0);
+            ->where(function ($query) use ($missSince) {
+                // 命中过的正常轮转；另外把「很久以前核对过、当时没命中」的也捞进来，
+                // 这样万一某次复核误判（对端瞬时返回不全）把记录置 0，还能自己恢复，
+                // 不会永久卡在 0（那种情况以前只能手工 TRUNCATE）。
+                $query->where('peer_torrent_id', '>', 0)
+                    ->orWhere('checked_at', '<', $missSince);
+            });
 
         if ($before > 0) {
             $query->where('checked_at', '<', $before);
@@ -779,27 +839,80 @@ JS;
      *
      * 两种：种子被删（t.id 没了），种子被原地换过（id 还在但 hash 变了）。
      * 不清理的话，列表页/详情页会一直挂着一个查不到的映射。
+     *
+     * 分批删：首次升级时可能一次有几万条孤儿，单条 DELETE 不带上限会长时间锁表，
+     * 把正在跑的种子列表查询一起堵住。
      */
-    public function purgeOrphans(): int
+    public function purgeOrphans(int $batchSize = 5000, int $maxBatches = 20): int
     {
-        $query = NexusDB::table('plugin_xseed_peers as p')
-            ->leftJoin('torrents as t', function ($join) {
-                $join->on('t.id', '=', 'p.torrent_id')
-                    ->on('t.pieces_hash', '=', 'p.pieces_hash');
-            })
-            ->whereNull('t.id');
+        $sql = 'DELETE p FROM plugin_xseed_peers p '
+            . 'LEFT JOIN torrents t ON t.id = p.torrent_id AND t.pieces_hash = p.pieces_hash '
+            . 'WHERE t.id IS NULL LIMIT ' . max(1, $batchSize);
 
-        $count = (int) (clone $query)->count();
-
-        if ($count > 0) {
-            NexusDB::statement(
-                'DELETE p FROM plugin_xseed_peers p '
-                . 'LEFT JOIN torrents t ON t.id = p.torrent_id AND t.pieces_hash = p.pieces_hash '
-                . 'WHERE t.id IS NULL'
-            );
+        try {
+            $connection = NexusDB::table('plugin_xseed_peers')->getConnection();
+        } catch (\Throwable $throwable) {
+            return 0;
         }
 
-        return $count;
+        $total = 0;
+
+        for ($i = 0; $i < $maxBatches; $i++) {
+            try {
+                $deleted = (int) $connection->delete($sql);
+            } catch (\Throwable $throwable) {
+                break;
+            }
+
+            if ($deleted <= 0) {
+                break;
+            }
+
+            $total += $deleted;
+
+            if ($deleted < $batchSize) {
+                break;      // 没删满说明已经清空了
+            }
+        }
+
+        return $total;
+    }
+
+    /**
+     * 跑之前先确认表结构是新的
+     *
+     * 万一只 composer update 没跑 plugin install，唯一键还是老的 (site_id, pieces_hash)，
+     * upsert 会把同 hash 的第二个种子顶掉、这批种子每轮都被重新捞出来 —— 不报错，
+     * 但会一直空转、白烧对端流量。这里提前拦下来，后台直接显示原因。
+     */
+    private function schemaProblem(): ?string
+    {
+        static $problem = null;
+        static $checked = false;
+
+        if ($checked) {
+            return $problem;
+        }
+
+        $checked = true;
+
+        try {
+            $indexes = NexusDB::table('plugin_xseed_peers')->getConnection()
+                ->select('show index from plugin_xseed_peers');
+        } catch (\Throwable $throwable) {
+            $problem = 'table plugin_xseed_peers missing, run: php artisan plugin install ptskit/nexusphp-xseed';
+            return $problem;
+        }
+
+        foreach ($indexes as $index) {
+            if (($index->Key_name ?? '') === 'uk_site_pieces_torrent') {
+                return null;
+            }
+        }
+
+        $problem = 'index uk_site_pieces_torrent missing, run: php artisan plugin install ptskit/nexusphp-xseed';
+
+        return $problem;
     }
 
     /** 问对端：给我这批 pieces_hash 对应的 torrent_id */
