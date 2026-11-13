@@ -41,13 +41,19 @@ class SyncCommand extends Command
         }
 
         try {
-            return $this->run();
+            return $this->handleSync();
         } finally {
             $this->releaseLock();
         }
     }
 
-    private function run(): int
+    /**
+     * 真正的同步逻辑
+     *
+     * 方法名不能叫 run()：父类 Command::run() 是 public，子类不能收窄成 private，
+     * 否则类加载阶段就 fatal error。
+     */
+    private function handleSync(): int
     {
         $query = XseedSite::query()->where('enabled', 1);
 

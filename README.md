@@ -64,7 +64,7 @@ cd /www/wwwroot/nexus && COMPOSER_ALLOW_SUPERUSER=1 composer require "ptskit/nex
 说明：
 
 - `composer require` 只把代码放进 `vendor/`，不建表，所以后面必须跟 `php artisan plugin install`。重跑整条命令是安全的，迁移幂等。
-- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.6`。依赖冲突时在 `composer require` 后加 `-W`。
+- 想钉死版本可写 `ptskit/nexusphp-xseed:0.2.7`。依赖冲突时在 `composer require` 后加 `-W`。
 - 从 `0.1.x` 升级必须把约束改成 `^0.2`（`^0.1` 覆盖不到 `0.2.x`），且**互通的两边都要升**。
 - ⚠️ 只清 `config` / `route` / `view` 三个缓存。**不要**跑 `optimize:clear` 或 `cache:clear`，会把后台令牌权限设置清成默认值。
 
