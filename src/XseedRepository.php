@@ -31,7 +31,7 @@ class XseedRepository extends BasePlugin
 {
     const ID = 'xseed';
 
-    const VERSION = '0.2.7';
+    const VERSION = '0.2.8';
 
     const COMPATIBLE_NP_VERSION = '1.9.0';
 
@@ -429,8 +429,17 @@ JS;
     ): array {
         $result = ['total' => 0, 'hit' => 0, 'chunks' => 0, 'review' => 0, 'error' => ''];
 
-        if (empty($site->secret) || empty($site->base_url)) {
-            $result['error'] = 'secret or base_url is empty';
+        // base_url 先判：它不依赖解密，能直接定位是哪个字段缺
+        if (empty($site->base_url)) {
+            $result['error'] = 'base_url is empty, fill the peer site url in admin';
+            return $result;
+        }
+
+        // 读一次 secret 才会触发解密，也才会置上 secretDecryptFailed 标记
+        if ((string) $site->secret === '') {
+            $result['error'] = $site->secretDecryptFailed
+                ? 'secret decrypt failed (APP_KEY changed or value truncated), re-fill it in admin'
+                : 'secret is empty, fill the same key on both sides';
             return $result;
         }
 
@@ -933,7 +942,13 @@ JS;
             ->post(rtrim((string) $site->base_url, '/') . '/plugin-xseed/api/lookup');
 
         if (!$response->ok()) {
-            throw new \RuntimeException(sprintf('lookup failed, http %s', $response->status()));
+            // 带上响应体：401 的三种理由（unauthorized / bad signature / expired）
+            // 全在那几个字节里，只报 http 401 等于什么都没说
+            throw new \RuntimeException(sprintf(
+                'lookup failed, http %s: %s',
+                $response->status(),
+                mb_substr(trim(preg_replace('/\s+/', ' ', (string) $response->body())), 0, 160)
+            ));
         }
 
         $json = $response->json();

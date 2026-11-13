@@ -21,6 +21,15 @@ class XseedSite extends NexusModel
     /** 库里 secret 的密文前缀；没有这个前缀的按明文兼容 */
     const SECRET_PREFIX = 'enc:';
 
+    /**
+     * 密钥解密失败标记
+     *
+     * getSecretAttribute() 解不开时只能返回空串，从外部看和「没填过」完全一样，
+     * 同步侧就只会报一句 secret is empty，查起来要命。这里留个标记，
+     * 让上层能区分「没填」和「填了但解不开（APP_KEY 换过 / 密文被截断）」。
+     */
+    public bool $secretDecryptFailed = false;
+
     protected $table = 'plugin_xseed_sites';
 
     protected $fillable = [
@@ -30,6 +39,8 @@ class XseedSite extends NexusModel
 
     public function getSecretAttribute($value): string
     {
+        $this->secretDecryptFailed = false;
+
         if (!is_string($value) || $value === '') {
             return '';
         }
@@ -41,7 +52,10 @@ class XseedSite extends NexusModel
         try {
             return Crypt::decryptString(substr($value, 4));
         } catch (\Throwable $throwable) {
-            // 换过 APP_KEY 之类，解不开就当作没配，后台会显示「密钥为空」
+            // 两种可能：换过 APP_KEY，或者密文被字段宽度截断过（0.2.6/0.2.7 的 bug）。
+            // 无论哪种都只能重填，这里标记一下让同步侧报出准确原因。
+            $this->secretDecryptFailed = true;
+
             if (function_exists('do_log')) {
                 do_log('[xseed] decrypt secret failed, re-fill it in admin: ' . $throwable->getMessage(), 'error');
             }
